@@ -3,6 +3,12 @@
 #include <time.h>
 #include "matrix_sum.h"
 
+static double get_time_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec / 1000000000.0;
+}
+
 static void fill_matrix_random(float* mat, size_t M, size_t N) {
     size_t total = M * N;
     for (size_t i = 0; i < total; i++) {
@@ -43,23 +49,56 @@ static int verify_result(const float** matrices, const float* result, size_t M, 
     return passed;
 }
 
+static int compare_results(const float* a, const float* b, size_t M, size_t N) {
+    size_t total = M * N;
+    const float epsilon = 1e-3f;
+    int passed = 1;
+    size_t errors = 0;
+    
+    for (size_t i = 0; i < total; i++) {
+        float diff = a[i] - b[i];
+        if (diff < 0) diff = -diff;
+        
+        if (diff > epsilon) {
+            if (errors < 5) {
+                printf("Mismatch at index %zu: single=%.6f, multi=%.6f, diff=%.6f\n", 
+                       i, a[i], b[i], diff);
+            }
+            errors++;
+            passed = 0;
+        }
+    }
+    
+    if (!passed) {
+        printf("Total mismatches: %zu\n", errors);
+    }
+    
+    return passed;
+}
+
 int main(int argc, char* argv[]) {
     size_t M = 256;
     size_t N = 256;
+    int num_threads = 6;
     
     if (argc >= 3) {
         M = (size_t)atoi(argv[1]);
         N = (size_t)atoi(argv[2]);
     }
+    if (argc >= 4) {
+        num_threads = atoi(argv[3]);
+    }
     
     printf("Matrix size: %zux%zu\n", M, N);
     printf("Number of matrices: %d\n", NUM_MATRICES);
+    printf("Number of threads: %d\n\n", num_threads);
     
     float** matrices = (float**)malloc(NUM_MATRICES * sizeof(float*));
     for (int i = 0; i < NUM_MATRICES; i++) {
         matrices[i] = (float*)malloc(M * N * sizeof(float));
     }
-    float* result = (float*)malloc(M * N * sizeof(float));
+    float* result_single = (float*)malloc(M * N * sizeof(float));
+    float* result_multi = (float*)malloc(M * N * sizeof(float));
     
     srand((unsigned int)time(NULL));
     for (int i = 0; i < NUM_MATRICES; i++) {
@@ -68,27 +107,35 @@ int main(int argc, char* argv[]) {
     
     const float** mat_ptrs = (const float**)matrices;
     
-    clock_t start = clock();
-    matrix_sum_single_thread(mat_ptrs, result, M, N);
-    clock_t end = clock();
+    double start = get_time_ns();
+    matrix_sum_single_thread(mat_ptrs, result_single, M, N);
+    double end = get_time_ns();
+    double time_single = end - start;
     
-    double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
-    printf("Single-thread time: %.4f seconds\n", elapsed);
+    printf("Single-thread time: %.6f seconds\n", time_single);
     
-    printf("Verifying result...\n");
-    int passed = verify_result(mat_ptrs, result, M, N);
+    start = get_time_ns();
+    matrix_sum_multi_thread(mat_ptrs, result_multi, M, N, num_threads);
+    end = get_time_ns();
+    double time_multi = end - start;
     
-    if (passed) {
-        printf("Test PASSED\n");
-    } else {
-        printf("Test FAILED\n");
-    }
+    printf("Multi-thread time:  %.6f seconds\n", time_multi);
+    printf("Speedup:            %.2fx\n\n", time_single / time_multi);
+    
+    printf("Verifying single-thread result...\n");
+    int passed_single = verify_result(mat_ptrs, result_single, M, N);
+    printf("Single-thread test: %s\n\n", passed_single ? "PASSED" : "FAILED");
+    
+    printf("Comparing multi-thread vs single-thread...\n");
+    int passed_multi = compare_results(result_single, result_multi, M, N);
+    printf("Multi-thread test:  %s\n\n", passed_multi ? "PASSED" : "FAILED");
     
     for (int i = 0; i < NUM_MATRICES; i++) {
         free(matrices[i]);
     }
     free(matrices);
-    free(result);
+    free(result_single);
+    free(result_multi);
     
-    return passed ? 0 : 1;
+    return (passed_single && passed_multi) ? 0 : 1;
 }
