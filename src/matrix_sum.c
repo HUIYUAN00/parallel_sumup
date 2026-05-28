@@ -3,11 +3,11 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-void matrix_sum_single_thread(const float** matrices, float* result, size_t M, size_t N) {
+void matrix_sum_single_thread(float** matrices, size_t M, size_t N) {
     size_t total = M * N;
-    memset(result, 0, total * sizeof(float));
+    float* result = matrices[0];
     
-    for (size_t k = 0; k < NUM_MATRICES; k++) {
+    for (size_t k = 1; k < NUM_MATRICES; k++) {
         const float* mat = matrices[k];
         for (size_t i = 0; i < total; i++) {
             result[i] += mat[i];
@@ -16,8 +16,8 @@ void matrix_sum_single_thread(const float** matrices, float* result, size_t M, s
 }
 
 typedef struct {
-    const float** matrices;
-    float* result;
+    float** matrices;
+    float* partial_result;
     size_t M;
     size_t N;
     int start_idx;
@@ -28,23 +28,23 @@ static void* thread_sum(void* arg) {
     ThreadArg* ta = (ThreadArg*)arg;
     size_t total = ta->M * ta->N;
     
-    memset(ta->result, 0, total * sizeof(float));
+    memset(ta->partial_result, 0, total * sizeof(float));
     
     for (int k = 0; k < ta->count; k++) {
         const float* mat = ta->matrices[ta->start_idx + k];
         for (size_t i = 0; i < total; i++) {
-            ta->result[i] += mat[i];
+            ta->partial_result[i] += mat[i];
         }
     }
     
     return NULL;
 }
 
-void matrix_sum_multi_thread(const float** matrices, float* result, size_t M, size_t N, int num_threads) {
+void matrix_sum_multi_thread(float** matrices, size_t M, size_t N, int num_threads) {
     size_t total = M * N;
     
     if (num_threads <= 1 || num_threads > NUM_MATRICES) {
-        matrix_sum_single_thread(matrices, result, M, N);
+        matrix_sum_single_thread(matrices, M, N);
         return;
     }
     
@@ -65,7 +65,7 @@ void matrix_sum_multi_thread(const float** matrices, float* result, size_t M, si
         }
         
         args[t].matrices = matrices;
-        args[t].result = partial_results[t];
+        args[t].partial_result = partial_results[t];
         args[t].M = M;
         args[t].N = N;
         args[t].start_idx = current_idx;
@@ -79,6 +79,7 @@ void matrix_sum_multi_thread(const float** matrices, float* result, size_t M, si
         pthread_join(threads[t], NULL);
     }
     
+    float* result = matrices[0];
     memset(result, 0, total * sizeof(float));
     for (int t = 0; t < num_threads; t++) {
         for (size_t i = 0; i < total; i++) {
