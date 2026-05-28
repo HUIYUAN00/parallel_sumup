@@ -17,17 +17,20 @@ static void fill_matrix_random(float* mat, size_t M, size_t N) {
     }
 }
 
-static int verify_result(float** matrices, const float* matrix0_backup, size_t M, size_t N) {
+static void reset_matrices(float** matrices, float** backup, size_t M, size_t N) {
+    size_t total = M * N * sizeof(float);
+    for (int i = 0; i < NUM_MATRICES; i++) {
+        memcpy(matrices[i], backup[i], total);
+    }
+}
+
+static int verify_result(float** matrices, float** backup, size_t M, size_t N) {
     size_t total = M * N;
     float* expected = (float*)calloc(total, sizeof(float));
     
-    for (size_t i = 0; i < total; i++) {
-        expected[i] = matrix0_backup[i];
-    }
-    
-    for (size_t k = 1; k < NUM_MATRICES; k++) {
+    for (size_t k = 0; k < NUM_MATRICES; k++) {
         for (size_t i = 0; i < total; i++) {
-            expected[i] += matrices[k][i];
+            expected[i] += backup[k][i];
         }
     }
     
@@ -76,16 +79,17 @@ int main(int argc, char* argv[]) {
     printf("Number of threads: %d\n\n", num_threads);
     
     float** matrices = (float**)malloc(NUM_MATRICES * sizeof(float*));
+    float** backup = (float**)malloc(NUM_MATRICES * sizeof(float*));
     for (int i = 0; i < NUM_MATRICES; i++) {
         matrices[i] = (float*)malloc(M * N * sizeof(float));
+        backup[i] = (float*)malloc(M * N * sizeof(float));
     }
-    float* matrix0_backup = (float*)malloc(M * N * sizeof(float));
     
     srand((unsigned int)time(NULL));
     for (int i = 0; i < NUM_MATRICES; i++) {
         fill_matrix_random(matrices[i], M, N);
+        memcpy(backup[i], matrices[i], M * N * sizeof(float));
     }
-    memcpy(matrix0_backup, matrices[0], M * N * sizeof(float));
     
     double start = get_time_ns();
     matrix_sum_single_thread(matrices, M, N);
@@ -95,10 +99,10 @@ int main(int argc, char* argv[]) {
     printf("Single-thread time: %.6f seconds\n", time_single);
     
     printf("Verifying single-thread result...\n");
-    int passed_single = verify_result(matrices, matrix0_backup, M, N);
+    int passed_single = verify_result(matrices, backup, M, N);
     printf("Single-thread test: %s\n\n", passed_single ? "PASSED" : "FAILED");
     
-    memcpy(matrices[0], matrix0_backup, M * N * sizeof(float));
+    reset_matrices(matrices, backup, M, N);
     
     start = get_time_ns();
     matrix_sum_multi_thread(matrices, M, N, num_threads);
@@ -109,14 +113,29 @@ int main(int argc, char* argv[]) {
     printf("Speedup:            %.2fx\n\n", time_single / time_multi);
     
     printf("Verifying multi-thread result...\n");
-    int passed_multi = verify_result(matrices, matrix0_backup, M, N);
+    int passed_multi = verify_result(matrices, backup, M, N);
     printf("Multi-thread test:  %s\n\n", passed_multi ? "PASSED" : "FAILED");
+    
+    reset_matrices(matrices, backup, M, N);
+    
+    start = get_time_ns();
+    matrix_sum_divide_conquer(matrices, M, N, num_threads);
+    end = get_time_ns();
+    double time_divide = end - start;
+    
+    printf("Divide-conquer time: %.6f seconds\n", time_divide);
+    printf("Speedup:             %.2fx\n\n", time_single / time_divide);
+    
+    printf("Verifying divide-conquer result...\n");
+    int passed_divide = verify_result(matrices, backup, M, N);
+    printf("Divide-conquer test: %s\n\n", passed_divide ? "PASSED" : "FAILED");
     
     for (int i = 0; i < NUM_MATRICES; i++) {
         free(matrices[i]);
+        free(backup[i]);
     }
     free(matrices);
-    free(matrix0_backup);
+    free(backup);
     
-    return (passed_single && passed_multi) ? 0 : 1;
+    return (passed_single && passed_multi && passed_divide) ? 0 : 1;
 }

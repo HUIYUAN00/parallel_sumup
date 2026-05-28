@@ -9,4 +9,6 @@ void matrix_sum_single_thread(float** matrices, size_t M, size_t N);
 
 void matrix_sum_multi_thread(float** matrices, size_t M, size_t N, int num_threads);
 
+void matrix_sum_divide_conquer(float** matrices, size_t M, size_t N, int num_threads);
+
 #endif
