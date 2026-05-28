@@ -1,0 +1,8 @@
+# Executables
+matrix_sum
+
+# Object files
+*.o
+
+# Debug files
+*.dSYM/
